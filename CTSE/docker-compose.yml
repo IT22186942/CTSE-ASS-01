@@ -1,0 +1,53 @@
+services:
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    environment:
+      PORT: 8001
+      TOKEN_SECRET: ${TOKEN_SECRET:-local-demo-secret}
+      NOTIFICATION_SERVICE_URL: http://notification-service:8004
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
+    ports:
+      - "8001:8001"
+
+  catalog-service:
+    build:
+      context: .
+      dockerfile: services/catalog-service/Dockerfile
+    environment:
+      PORT: 8002
+      NOTIFICATION_SERVICE_URL: http://notification-service:8004
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
+      ADMIN_USER_ID: catalog-admin
+    ports:
+      - "8002:8002"
+
+  order-service:
+    build:
+      context: .
+      dockerfile: services/order-service/Dockerfile
+    environment:
+      PORT: 8003
+      AUTH_SERVICE_URL: http://auth-service:8001
+      CATALOG_SERVICE_URL: http://catalog-service:8002
+      NOTIFICATION_SERVICE_URL: http://notification-service:8004
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
+    ports:
+      - "8003:8003"
+    depends_on:
+      - auth-service
+      - catalog-service
+      - notification-service
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    environment:
+      PORT: 8004
+      AUTH_SERVICE_URL: http://auth-service:8001
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
+    ports:
+      - "8004:8004"
+

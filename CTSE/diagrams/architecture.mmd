@@ -1,0 +1,39 @@
+flowchart LR
+  user["Student / API Client"]
+  github["GitHub Repository"]
+  actions["GitHub Actions CI/CD"]
+  registry["GitHub Container Registry"]
+  snyk["Snyk / Trivy Security Scan"]
+  aca["Azure Container Apps Environment"]
+  auth["Auth Service\n:8001"]
+  catalog["Catalog Service\n:8002"]
+  order["Order Service\n:8003"]
+  notification["Notification Service\n:8004"]
+  secrets["Managed Secrets\nTOKEN_SECRET, INTERNAL_API_KEY"]
+  logs["Log Analytics"]
+
+  user -->|"HTTPS requests"| auth
+  user -->|"Browse products"| catalog
+  user -->|"Create order with bearer token"| order
+  user -->|"Read notifications"| notification
+
+  github --> actions
+  actions -->|"unit tests and compile checks"| actions
+  actions -->|"SAST/dependency/container scan"| snyk
+  actions -->|"build and push images"| registry
+  registry -->|"deploy images"| aca
+
+  aca --> auth
+  aca --> catalog
+  aca --> order
+  aca --> notification
+  aca --> secrets
+  aca --> logs
+
+  auth -->|"welcome notification\nx-api-key"| notification
+  catalog -->|"catalog event\nx-api-key"| notification
+  order -->|"validate token"| auth
+  order -->|"get product and reserve stock\nx-api-key"| catalog
+  order -->|"order confirmation\nx-api-key"| notification
+  notification -->|"validate bearer token"| auth
+

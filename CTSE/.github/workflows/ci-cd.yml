@@ -1,0 +1,112 @@
+name: CI CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+
+jobs:
+  test:
+    name: Unit tests and syntax checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile Python files
+        run: python -m compileall shared services tests
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+  security:
+    name: DevSecOps scans
+    runs-on: ubuntu-latest
+    needs: test
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+      - name: Run Snyk scan when token is configured
+        if: env.SNYK_TOKEN != ''
+        uses: snyk/actions/python@master
+        env:
+          SNYK_TOKEN: ${{ env.SNYK_TOKEN }}
+        with:
+          command: test
+
+  build-and-push:
+    name: Build and publish images
+    runs-on: ubuntu-latest
+    needs: security
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        service: [auth-service, catalog-service, order-service, notification-service]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+
+  deploy-azure-container-apps:
+    name: Deploy to Azure Container Apps
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+      TOKEN_SECRET: ${{ secrets.TOKEN_SECRET }}
+      INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.AZURE_CREDENTIALS != ''
+      - uses: azure/login@v2
+        if: env.AZURE_CREDENTIALS != ''
+        with:
+          creds: ${{ env.AZURE_CREDENTIALS }}
+      - name: Deploy Bicep template
+        if: env.AZURE_CREDENTIALS != ''
+        uses: azure/arm-deploy@v2
+        with:
+          scope: resourcegroup
+          resourceGroupName: ${{ env.AZURE_RESOURCE_GROUP }}
+          template: deploy/azure-container-apps.bicep
+          parameters: >
+            imagePrefix=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}
+            imageTag=${{ github.sha }}
+            tokenSecret=${{ env.TOKEN_SECRET }}
+            internalApiKey=${{ env.INTERNAL_API_KEY }}
