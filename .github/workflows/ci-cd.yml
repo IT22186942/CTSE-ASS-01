@@ -26,9 +26,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile Python files
-        run: python -m compileall shared services tests
+        run: python -m compileall CTSE/shared CTSE/services CTSE/tests
       - name: Run unit tests
-        run: python -m unittest discover -s tests -v
+        run: python -m unittest discover -s CTSE/tests -v
 
   security:
     name: DevSecOps scans
@@ -42,7 +42,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
-          scan-ref: .
+          scan-ref: ./CTSE
           format: sarif
           output: trivy-results.sarif
       - name: Upload Trivy results
@@ -74,7 +74,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./CTSE
           file: services/${{ matrix.service }}/Dockerfile
           push: true
           tags: |
@@ -104,7 +104,7 @@ jobs:
         with:
           scope: resourcegroup
           resourceGroupName: ${{ env.AZURE_RESOURCE_GROUP }}
-          template: deploy/azure-container-apps.bicep
+          template: CTSE/deploy/azure-container-apps.bicep
           parameters: >
             imagePrefix=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}
             imageTag=${{ github.sha }}
